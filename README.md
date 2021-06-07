@@ -2,6 +2,8 @@
 
 Process cpu,mem,io resource-usage and resource-wait statistics
 
+	Need CAP_NET_ADMIN
+
 ## Output Headers
 
 ### The top header

@@ -57,7 +57,10 @@ LIST_HEAD(g_list_cgroup);
 
 struct msgtemplate {
 	struct nlmsghdr n;
-	struct genlmsghdr g;
+	union {
+		struct genlmsghdr g;
+		struct nlmsgerr e;
+	};
 	char buf[MAX_MSG_SIZE];
 };
 
@@ -1033,6 +1036,7 @@ static inline int pid_track_get_delay(struct pid_track *pt)
 	int len, msg_len, len2, aggr_len;
 	struct msgtemplate msg;
 	struct nlattr *na;
+	static int print_eperm = 0;
 
 	len = nl_send_cmd(g_socket_fd, g_family_id, getpid(), TASKSTATS_CMD_GET,
 				TASKSTATS_CMD_ATTR_PID, &pt->tid, sizeof(__u32));
@@ -1047,9 +1051,12 @@ static inline int pid_track_get_delay(struct pid_track *pt)
 	len = recv(g_socket_fd, &msg, sizeof(msg), 0);
 	if (len < 0 || msg.n.nlmsg_type == NLMSG_ERROR ||
 	   !NLMSG_OK((&msg.n), len)) {
-#ifdef DBG
-		fprintf(stderr, "get msg failed, %d/%d\n", pt->pid, pt->tid);
-#endif
+		if (print_eperm == 0 && msg.e.error == -EPERM) {
+			fprintf(stderr, "need CAP_NET_ADMIN: error:%d, %s\n",
+				msg.e.error, strerror(-msg.e.error));
+			fprintf(stderr, "you can run it with sudo, or #sudo setcap cap_net_admin `which pidtrack`\n");
+			print_eperm = 1;
+		}
 		return -1;
 	}
 
