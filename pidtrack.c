@@ -36,7 +36,7 @@
 #include <linux/genetlink.h>
 #include "list.h"
 
-#define VERSION "v1.3.3"
+#define VERSION "v1.3.4"
 
 LIST_HEAD(g_list);
 LIST_HEAD(g_list_cgroup);
