@@ -820,7 +820,7 @@ static void pid_track_show_extra_header(void)
 		fmt = "\033[31mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
 			       "iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
 
-	printf(fmt, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
+	fprintf(stderr, fmt, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
 		g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
 		g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
 }
@@ -836,7 +836,7 @@ static void pid_track_show_header(void)
 	snprintf(g_ts, sizeof(g_ts), "%4d-%02d-%02dT%02d:%02d:%02d.%03ld",
 		 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,tm->tm_min, tm->tm_sec, t.tv_nsec / 1000000L);
 
-	printf("\n\33[33mTime: %s\33[0m\n", g_ts);
+	fprintf(stderr, "\n\33[33mTime: %s\33[0m\n", g_ts);
 	pid_track_show_extra_header();
 
 	switch (g_sort) {
@@ -880,12 +880,12 @@ static void pid_track_show_header(void)
 			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 	}
-	printf(fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
+	fprintf(stderr, fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
 }
 
 static void pid_track_show_data_one(struct pid_track *pt)
 {
-	printf("%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
+	fprintf(stderr, "%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
 		pt->pid, pt->tid,
 		pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
 		100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
