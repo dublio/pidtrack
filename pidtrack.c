@@ -36,7 +36,7 @@
 #include <linux/genetlink.h>
 #include "list.h"
 
-#define VERSION "v1.3.4"
+#define VERSION "v1.3.5"
 
 LIST_HEAD(g_list);
 LIST_HEAD(g_list_cgroup);
@@ -176,6 +176,7 @@ int g_sort = SORT_CPU_WAIT;
 int g_index;
 int g_loop;
 int g_thread;
+int g_logging;
 char g_ts[64];
 int g_interval_ms = 1000;
 int g_socket_fd;
@@ -813,33 +814,42 @@ static void pid_track_show_extra_header(void)
 {
 	const char *fmt;
 
-	if (g_cpu_wr < 50)
-		fmt = "\033[32mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
-			       "iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
-	else
-		fmt = "\033[31mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
-			       "iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
+	if (g_logging) {
+		fmt = "%23s cpu: %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d "
+		"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\n";
+		fprintf(stderr, fmt,
+			g_ts, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
+			g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
+			g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
+	} else {
+		fprintf(stderr, "\n\33[33mTime: %s\33[0m\n", g_ts);
+		if (g_cpu_wr < 50)
+			fmt = "\033[32mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
+			"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
+		else
+			fmt = "\033[31mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
+			"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
 
-	fprintf(stderr, fmt, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
-		g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
-		g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
+		fprintf(stderr, fmt, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
+			g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
+			g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
+	}
 }
 
 static void pid_track_show_header(void)
 {
-	struct tm *tm;
-	struct timespec t;
 	const char *fmt;
 
-	clock_gettime(CLOCK_REALTIME, &t);
-	tm = localtime(&t.tv_sec);
-	snprintf(g_ts, sizeof(g_ts), "%4d-%02d-%02dT%02d:%02d:%02d.%03ld",
-		 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,tm->tm_min, tm->tm_sec, t.tv_nsec / 1000000L);
-
-	fprintf(stderr, "\n\33[33mTime: %s\33[0m\n", g_ts);
 	pid_track_show_extra_header();
 
-	switch (g_sort) {
+	if (g_logging && (g_loop != 1) && (g_loop % 100 != 0))
+		return;
+
+	if (g_logging) {
+		fmt = "%-23s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+		fprintf(stderr, fmt, "Time", "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
+	} else {
+		switch (g_sort) {
 		case SORT_UTIL:
 			fmt = "\33[47;30m%-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
@@ -879,18 +889,29 @@ static void pid_track_show_header(void)
 		default: /* no sort */
 			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
+		}
+
+		fprintf(stderr, fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
 	}
-	fprintf(stderr, fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
 }
 
 static void pid_track_show_data_one(struct pid_track *pt)
 {
-	fprintf(stderr, "%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
-		pt->pid, pt->tid,
-		pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
-		100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
-		pt->write_bps /1048576.0, pt->delta_io_delay_us, pt->delta_mem_delay_us,
-		pt->delta_cpu_delay_us, pt->comm, pt->cmdline);
+	if (g_logging)
+		fprintf(stderr, "%23s %-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
+			g_ts,
+			pt->pid, pt->tid,
+			pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
+			100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
+			pt->write_bps /1048576.0, pt->delta_io_delay_us, pt->delta_mem_delay_us,
+			pt->delta_cpu_delay_us, pt->comm, pt->cmdline);
+	else
+		fprintf(stderr, "%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
+			pt->pid, pt->tid,
+			pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
+			100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
+			pt->write_bps /1048576.0, pt->delta_io_delay_us, pt->delta_mem_delay_us,
+			pt->delta_cpu_delay_us, pt->comm, pt->cmdline);
 }
 
 static int compare(const void *s1, const void *s2)
@@ -962,6 +983,17 @@ static int compare(const void *s1, const void *s2)
 	return ret;
 }
 
+static void update_timestamp(void)
+{
+	struct tm *tm;
+	struct timespec t;
+
+	clock_gettime(CLOCK_REALTIME, &t);
+	tm = localtime(&t.tv_sec);
+	snprintf(g_ts, sizeof(g_ts), "%4d-%02d-%02dT%02d:%02d:%02d.%03ld",
+		 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,tm->tm_min, tm->tm_sec, t.tv_nsec / 1000000L);
+}
+
 static int pid_track_show_data(void)
 {
 	struct pid_track **pts, *p, *t;
@@ -970,6 +1002,8 @@ static int pid_track_show_data(void)
 
 	if (g_thresh_cpu_util && (int)g_cpu_util < g_thresh_cpu_util)
 		return 0;
+
+	update_timestamp();
 
 	pid_track_show_header();
 
@@ -1177,15 +1211,16 @@ static int pidtrack_setup_top(const char *v)
 }
 static void usage(void)
 {
-	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] -p pid1,pid2\n");
-	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] -g cgroup1,cgroup2\n");
-	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] -p pid1,pid2 -g cgroup1,cgroup2\n");
+	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] [-l] -p pid1,pid2\n");
+	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] [-l] -g cgroup1,cgroup2\n");
+	fprintf(stderr, "pidtrack [-T] [-t <NUM>] [-s <key>] [-U N] [-i N] [-l] -p pid1,pid2 -g cgroup1,cgroup2\n");
 	fprintf(stderr, "    -T: show statistics for each thread, normally only show process level data.\n");
 	fprintf(stderr, "    -p: process list, seperated by comma\n");
 	fprintf(stderr, "    -g: cgroup list, seperated by comma\n");
 	fprintf(stderr, "    -s: the output can be sorted by key of: none util user sys wr cs ics read write io iowait memwait cpuwait\n");
 	fprintf(stderr, "    -t: only show top <NUM> pid/tid\n");
 	fprintf(stderr, "    -i: the sampling interval in unit of ms\n");
+	fprintf(stderr, "    -l: logging mode, append timestamp for each output line\n");
 	fprintf(stderr, "    -U: only show data when cpu.util larger than it\n");
 	fprintf(stderr, "    -v: show version\n");
 	fprintf(stderr, "    -h: show this help\n");
@@ -1323,7 +1358,7 @@ static void pid_lat_deinit(void)
 
 static int parse_arg(int argc, char **argv)
 {
-	const char *opts = ":vhTp:s:t:g:i:U:";
+	const char *opts = ":vhTlp:s:t:g:i:U:";
 	int k;
 
 	while (1) {
@@ -1346,6 +1381,9 @@ static int parse_arg(int argc, char **argv)
 		case 'i' :
 			if (1 != sscanf(optarg, "%d", &g_interval_ms))
 				return -1;
+			break;
+		case 'l':
+			g_logging = 1;
 			break;
 		case 'U' :
 			if (1 != sscanf(optarg, "%d", &g_thresh_cpu_util))

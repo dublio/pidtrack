@@ -46,6 +46,7 @@ Process cpu,mem,io resource-usage and resource-wait statistics
 	-g			cgroup list, separated by comma when monitor multiple cgroups.
 					-p and -g can be used at same time.
 	-i N		the sample interval in unit of millisecond
+	-l		logging mode, append timestamp for each output line
 	-s key		sort output by keys: util user sys wr cs ics read write io iowait memwai cpuwait
 					the default sort field is cpuwait.
 	-t N		only show top $NUM
@@ -140,3 +141,5 @@ Process cpu,mem,io resource-usage and resource-wait statistics
 		add field cs/s
 	v1.3.4 2021-06-07
 		add field ics/s
+	v1.3.5 2021-09-16
+		add support logging mode, append timestamp for each output line, for easy grep.
