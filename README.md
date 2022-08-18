@@ -147,3 +147,5 @@ Process cpu,mem,io resource-usage and resource-wait statistics
 		add field ics/s
 	v1.3.5 2021-09-16
 		add support logging mode, append timestamp for each output line, for easy grep.
+	v1.3.6 2022-08-18
+		add field rsysc/s wsysc/s: read & write syscall statistics
