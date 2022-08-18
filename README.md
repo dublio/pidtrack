@@ -18,6 +18,8 @@ Process cpu,mem,io resource-usage and resource-wait statistics
 	ics/s:		involuntary context swich count per second for all monitored threads
 	read:		The disk IO read MB/s
 	read:		The disk IO write MB/s
+	rsysc/s:	read IO syscalls/s
+	wsysc/s:	write IO syscalls/s
 
 ### The header with white backgroup
 	The carmine fields indicate the output was sorted by this field
@@ -32,6 +34,8 @@ Process cpu,mem,io resource-usage and resource-wait statistics
 	ics/s:		involuntary context switch per second
 	read:		disk IO read(MB/s)
 	write:		disk IO write(MB/s)
+	rsysc/s:	read IO syscalls/s
+	wsysc/s:	write IO syscalls/s
 	iowait:		the total time(us) when process cannot run caused by wait disk IO.
 	memwait:	the total time(us) when process reclaim memory.
 	cpuwait:	the total time(us) when process cannot run caused by cpu schedule.

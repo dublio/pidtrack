@@ -131,11 +131,13 @@ struct pid_track {
 	unsigned long delta_run_user, delta_run_sys;
 	unsigned long long delta_context_switch, delta_involuntary_context_switch;
 	unsigned long long delta_read_bytes, delta_write_bytes;
+	unsigned long long delta_read_syscalls, delta_write_syscalls;
 	float wait_rate;
 	float csps; /* context switch per second: include voluntary and involuntary */
 	float icsps; /* context switch per second: include voluntary and involuntary */
 	float cpu_util, cpu_util_user, cpu_util_sys;
 	float read_bps, write_bps;
+	int rsyscps, wsyscps;
 	char cmdline[32]; /* only cut first 32 charactors */
 	char comm[PR_SET_NAME];
 };
@@ -149,11 +151,14 @@ enum {
 	SORT_CS,	/* -s cs	: sort by cpu.context.switch */
 	SORT_ICS,	/* -s ics	: sort by cpu.involuntary.context.switch */
 	SORT_IO_READ,	/* -s read	: sort by io read */
+	SORT_IO_READ_SYSCPS,	/* -s rsyscps	: sort by io read syscps */
 	SORT_IO_WRITE,	/* -s write	: sort by io write */
+	SORT_IO_WRITE_SYSCPS,	/* -s wsyscps	: sort by io write syscps */
 	SORT_IO_WAIT,	/* -s iowait	: sort by io wait */
 	SORT_MEM_WAIT,	/* -s memwait	: sort by mem wait */
 	SORT_CPU_WAIT,	/* -s cpuwait	: sort by cpu wait */
 	SORT_IO,	/* -s io	: sort by io (read + write) */
+	SORT_IO_SYSCPS,	/* -s io_syscps	: sort by syscps (read + write) */
 };
 
 const char *const g_sort_str[] = {
@@ -166,10 +171,13 @@ const char *const g_sort_str[] = {
 	[SORT_ICS] = "ics",
 	[SORT_IO_READ] = "read",
 	[SORT_IO_WRITE] = "write",
+	[SORT_IO_READ_SYSCPS] = "rsyscps",
+	[SORT_IO_WRITE_SYSCPS] = "wsyscps",
 	[SORT_IO_WAIT] = "iowait",
 	[SORT_MEM_WAIT] = "memwait",
 	[SORT_CPU_WAIT] = "cpuwait",
 	[SORT_IO] = "io",
+	[SORT_IO_SYSCPS] = "iosysc",
 };
 
 int g_sort = SORT_CPU_WAIT;
@@ -192,6 +200,8 @@ unsigned long long g_delta_context_switch;
 unsigned long long g_delta_involuntary_context_switch;
 unsigned long long g_delta_read_bytes;
 unsigned long long g_delta_write_bytes;
+unsigned long long g_delta_read_syscalls;
+unsigned long long g_delta_write_syscalls;
 unsigned long long g_delta_io_delay_us;
 unsigned long long g_delta_mem_delay_us;
 unsigned long long g_delta_cpu_delay_us;
@@ -202,6 +212,8 @@ float g_cpu_util_user;
 float g_cpu_wr;
 float g_read_bps;
 float g_write_bps;
+int g_rsyscps;
+int g_wsyscps;
 float g_csps;
 float g_icsps;
 
@@ -683,6 +695,8 @@ static void pid_track_calc_data_tid(struct pid_track *pt)
 		pt->delta_involuntary_context_switch = 0;
 		pt->delta_read_bytes = 0;
 		pt->delta_write_bytes = 0;
+		pt->delta_read_syscalls = 0;
+		pt->delta_write_syscalls = 0;
 		pt->delta_io_delay_us = 0;
 		pt->delta_mem_delay_us = 0;
 		pt->delta_cpu_delay_us = 0;
@@ -719,6 +733,12 @@ static void pid_track_calc_data_tid(struct pid_track *pt)
 	/* read/wirte bps */
 	pt->read_bps = pt->delta_read_bytes * 1000.0 / (float)g_interval_ms;
 	pt->write_bps = pt->delta_write_bytes * 1000.0 / (float)g_interval_ms;
+
+	pt->delta_read_syscalls = pts_cur->read_syscalls - pts_pre->read_syscalls;
+	pt->delta_write_syscalls = pts_cur->write_syscalls - pts_pre->write_syscalls;
+	/* read/write syscalls */
+	pt->rsyscps = pt->delta_read_syscalls * 1000 / g_interval_ms;
+	pt->wsyscps = pt->delta_write_syscalls * 1000 / g_interval_ms;
 }
 
 static void pid_track_calc_data_pid(struct pid_track *pt)
@@ -730,6 +750,7 @@ static void pid_track_calc_data_pid(struct pid_track *pt)
 	pt->delta_run_user = pt->delta_run_sys = 0.0;
 	pt->delta_context_switch = 0;
 	pt->delta_read_bytes = pt->delta_write_bytes = 0;
+	pt->delta_read_syscalls = pt->delta_write_syscalls = 0;
 	pt->delta_io_delay_us = 0;
 	pt->delta_cpu_delay_us = 0;
 	pt->delta_mem_delay_us = 0;
@@ -743,6 +764,8 @@ static void pid_track_calc_data_pid(struct pid_track *pt)
 		pt->delta_involuntary_context_switch += p->delta_involuntary_context_switch;
 		pt->delta_read_bytes += p->delta_read_bytes;
 		pt->delta_write_bytes += p->delta_write_bytes;
+		pt->delta_read_syscalls += p->delta_read_syscalls;
+		pt->delta_write_syscalls += p->delta_write_syscalls;
 		pt->delta_io_delay_us += p->delta_io_delay_us;
 		pt->delta_mem_delay_us += p->delta_mem_delay_us;
 		pt->delta_cpu_delay_us += p->delta_cpu_delay_us;
@@ -763,6 +786,10 @@ static void pid_track_calc_data_pid(struct pid_track *pt)
 	/* read/wirte bps */
 	pt->read_bps = pt->delta_read_bytes * 1000.0 / (float)g_interval_ms;
 	pt->write_bps = pt->delta_write_bytes * 1000.0 / (float)g_interval_ms;
+
+	/* read/write syscps */
+	pt->rsyscps = pt->delta_read_syscalls * 1000 / g_interval_ms;
+	pt->wsyscps = pt->delta_write_syscalls * 1000 / g_interval_ms;
 }
 
 static void pid_track_cacl_data_global(void)
@@ -777,6 +804,8 @@ static void pid_track_cacl_data_global(void)
 	g_icsps = (float)(g_delta_involuntary_context_switch * 1000.0) / (float)g_interval_ms;
 	g_read_bps = (float)(g_delta_read_bytes * 1000.0) / (float)g_interval_ms;
 	g_write_bps = (float)(g_delta_write_bytes * 1000.0) / (float)g_interval_ms;
+	g_rsyscps = g_delta_read_syscalls * 1000 / g_interval_ms;
+	g_wsyscps = g_delta_write_syscalls * 1000 / g_interval_ms;
 }
 
 static void pid_track_calc_data(void)
@@ -788,6 +817,7 @@ static void pid_track_calc_data(void)
 	g_delta_run_user = g_delta_run_sys = 0;
 	g_delta_context_switch = 0;
 	g_delta_read_bytes = g_delta_write_bytes = 0;
+	g_delta_read_syscalls = g_delta_write_syscalls = 0;
 	g_delta_io_delay_us = 0;
 	g_delta_mem_delay_us = 0;
 	g_delta_cpu_delay_us = 0;
@@ -800,6 +830,8 @@ static void pid_track_calc_data(void)
 		g_delta_context_switch += p->delta_context_switch;
 		g_delta_read_bytes += p->delta_read_bytes;
 		g_delta_write_bytes += p->delta_write_bytes;
+		g_delta_read_syscalls += p->delta_read_syscalls;
+		g_delta_write_syscalls += p->delta_write_syscalls;
 		g_delta_io_delay_us += p->delta_io_delay_us;
 		g_delta_mem_delay_us += p->delta_mem_delay_us;
 		g_delta_cpu_delay_us += p->delta_cpu_delay_us;
@@ -815,23 +847,23 @@ static void pid_track_show_extra_header(void)
 	const char *fmt;
 
 	if (g_logging) {
-		fmt = "%23s cpu: %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d "
+		fmt = "%23s cpu: %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f rsysc/s: %-8d wsysc/s: %-8d pids: %-8d tids: %-8d "
 		"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\n";
 		fprintf(stderr, fmt,
 			g_ts, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
-			g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
+			g_write_bps / 1048576.0, g_rsyscps, g_wsyscps, g_nr_pid, g_nr_tid,
 			g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
 	} else {
 		fprintf(stderr, "\n\33[33mTime: %s\33[0m\n", g_ts);
 		if (g_cpu_wr < 50)
-			fmt = "\033[32mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
+			fmt = "\033[32mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f rsysc/s: %-8d wsysc/s: %-8d pids: %-8d tids: %-8d \n"
 			"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
 		else
-			fmt = "\033[31mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f pids: %-8d tids: %-8d \n"
+			fmt = "\033[31mcpu:    %-8.2f cpu.usr: %-8.2f cpu.sys: %-8.2f wr: %-5.2f cs/s: %-8.2f ics/s: %-8.2f read: %-8.2f write: %-8.2f rsysc/s: %-8d wsysc/s: %-8d pids: %-8d tids: %-8d \n"
 			"iowait: %-8llu memwait: %-8llu cpuwait: %-8llu\033[0m\n\n";
 
 		fprintf(stderr, fmt, g_cpu_util, g_cpu_util_user, g_cpu_util_sys, g_cpu_wr, g_csps, g_icsps, g_read_bps / 1048576.0,
-			g_write_bps / 1048576.0, g_nr_pid, g_nr_tid,
+			g_write_bps / 1048576.0, g_rsyscps, g_wsyscps, g_nr_pid, g_nr_tid,
 			g_delta_io_delay_us, g_delta_mem_delay_us, g_delta_cpu_delay_us);
 	}
 }
@@ -847,70 +879,82 @@ static void pid_track_show_header(void)
 
 	if (g_logging) {
 		fmt = "%-23s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
-		fprintf(stderr, fmt, "Time", "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
+		fprintf(stderr, fmt, "Time", "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "rsysc/s", "wsysc/s", "iowait", "memwait", "cpuwait", "comm", "cmdline");
 	} else {
 		switch (g_sort) {
 		case SORT_UTIL:
-			fmt = "\33[47;30m%-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_UTIL_USER:
-			fmt = "\33[47;30m%-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_UTIL_SYS:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_WAITRATE:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_CS:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_ICS:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_IO_READ:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_IO_WRITE:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			break;
+		case SORT_IO_READ_SYSCPS:
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			break;
+		case SORT_IO_WRITE_SYSCPS:
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_IO_WAIT:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_MEM_WAIT:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-8s %-15s %s\33[0m\n";
 			break;
 		case SORT_CPU_WAIT:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s\33[47;30m %-15s %s\33[0m\n";
 			break;
 		case SORT_IO:
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s %-8s\33[47;30m %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s %-8s\33[47;30m %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			break;
+		case SORT_IO_SYSCPS:
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s \33[0m\33[47;35m%-8s %-8s\33[47;30m %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		default: /* no sort */
-			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
+			fmt = "\33[47;30m%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-15s %s\33[0m\n";
 			break;
 		}
 
-		fprintf(stderr, fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "iowait", "memwait", "cpuwait", "comm", "cmdline");
+		fprintf(stderr, fmt, "pid", "tid", "util(%)", "user(%)", "sys(%)", "wr(%)", "cs/s", "ics/s", "read", "write", "rsysc/s", "wsysc/s", "iowait", "memwait", "cpuwait", "comm", "cmdline");
 	}
 }
 
 static void pid_track_show_data_one(struct pid_track *pt)
 {
 	if (g_logging)
-		fprintf(stderr, "%23s %-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
+		fprintf(stderr, "%23s %-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8d %-8d %-8llu %-8llu %-8llu %-15s %s\n",
 			g_ts,
 			pt->pid, pt->tid,
 			pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
 			100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
-			pt->write_bps /1048576.0, pt->delta_io_delay_us, pt->delta_mem_delay_us,
+			pt->write_bps /1048576.0, pt->rsyscps, pt->wsyscps,
+			pt->delta_io_delay_us, pt->delta_mem_delay_us,
 			pt->delta_cpu_delay_us, pt->comm, pt->cmdline);
 	else
-		fprintf(stderr, "%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8llu %-8llu %-8llu %-15s %s\n",
+		fprintf(stderr, "%-8d %-8d %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8.2f %-8d %-8d %-8llu %-8llu %-8llu %-15s %s\n",
 			pt->pid, pt->tid,
 			pt->cpu_util, pt->cpu_util_user, pt->cpu_util_sys,
 			100.0 * pt->wait_rate, pt->csps, pt->icsps, pt->read_bps /1048576.0,
-			pt->write_bps /1048576.0, pt->delta_io_delay_us, pt->delta_mem_delay_us,
+			pt->write_bps /1048576.0,
+			pt->rsyscps, pt->wsyscps,
+			pt->delta_io_delay_us, pt->delta_mem_delay_us,
 			pt->delta_cpu_delay_us, pt->comm, pt->cmdline);
 }
 
@@ -954,6 +998,14 @@ static int compare(const void *s1, const void *s2)
 			v1 = (float)p1->write_bps;
 			v2 = (float)p2->write_bps;
 			break;
+		case SORT_IO_READ_SYSCPS:
+			v1 = (float)p1->rsyscps;
+			v2 = (float)p2->rsyscps;
+			break;
+		case SORT_IO_WRITE_SYSCPS:
+			v1 = (float)p1->wsyscps;
+			v2 = (float)p2->wsyscps;
+			break;
 		case SORT_IO_WAIT:
 			v1 = (float)p1->delta_io_delay_us;
 			v2 = (float)p2->delta_io_delay_us;
@@ -969,6 +1021,10 @@ static int compare(const void *s1, const void *s2)
 		case SORT_IO:
 			v1 = (float)(p1->read_bps + p1->write_bps);
 			v2 = (float)(p2->read_bps + p2->write_bps);
+			break;
+		case SORT_IO_SYSCPS:
+			v1 = (float)(p1->rsyscps + p1->wsyscps);
+			v2 = (float)(p2->rsyscps + p2->wsyscps);
 			break;
 		default: /* no sort */
 			return 0;
@@ -1217,7 +1273,7 @@ static void usage(void)
 	fprintf(stderr, "    -T: show statistics for each thread, normally only show process level data.\n");
 	fprintf(stderr, "    -p: process list, seperated by comma\n");
 	fprintf(stderr, "    -g: cgroup list, seperated by comma\n");
-	fprintf(stderr, "    -s: the output can be sorted by key of: none util user sys wr cs ics read write io iowait memwait cpuwait\n");
+	fprintf(stderr, "    -s: the output can be sorted by key of: none util user sys wr cs ics read write io rsysc wsysc iosysc iowait memwait cpuwait\n");
 	fprintf(stderr, "    -t: only show top <NUM> pid/tid\n");
 	fprintf(stderr, "    -i: the sampling interval in unit of ms\n");
 	fprintf(stderr, "    -l: logging mode, append timestamp for each output line\n");
