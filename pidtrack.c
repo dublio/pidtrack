@@ -749,6 +749,7 @@ static void pid_track_calc_data_pid(struct pid_track *pt)
 	pt->delta_run = 0.0;
 	pt->delta_run_user = pt->delta_run_sys = 0.0;
 	pt->delta_context_switch = 0;
+	pt->delta_involuntary_context_switch = 0;
 	pt->delta_read_bytes = pt->delta_write_bytes = 0;
 	pt->delta_read_syscalls = pt->delta_write_syscalls = 0;
 	pt->delta_io_delay_us = 0;
@@ -816,6 +817,7 @@ static void pid_track_calc_data(void)
 	g_delta_run = 0;
 	g_delta_run_user = g_delta_run_sys = 0;
 	g_delta_context_switch = 0;
+	g_delta_involuntary_context_switch = 0;
 	g_delta_read_bytes = g_delta_write_bytes = 0;
 	g_delta_read_syscalls = g_delta_write_syscalls = 0;
 	g_delta_io_delay_us = 0;
@@ -828,6 +830,7 @@ static void pid_track_calc_data(void)
 		g_delta_run_user += p->delta_run_user;
 		g_delta_run_sys += p->delta_run_sys;
 		g_delta_context_switch += p->delta_context_switch;
+		g_delta_involuntary_context_switch += p->delta_involuntary_context_switch;
 		g_delta_read_bytes += p->delta_read_bytes;
 		g_delta_write_bytes += p->delta_write_bytes;
 		g_delta_read_syscalls += p->delta_read_syscalls;
